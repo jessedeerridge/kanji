@@ -197,7 +197,16 @@
   .chat-panel.hidden{display:none;}
   .chat-header{padding:8px 10px;border-bottom:1px solid #eee;font-weight:800;font-size:13px;}
   .chat-messages{padding:8px;overflow:auto;min-height:100px;max-height:260px;}
-  .chat-msg{margin:0 0 7px;font-size:13px;line-height:1.4;word-break:break-word;}
+  .chat-msg{
+    margin:0 0 7px;font-size:13px;line-height:1.4;word-break:break-word;
+    display:flex;align-items:flex-start;gap:6px;
+  }
+  .chat-msg .chat-body{flex:1;min-width:0;}
+  .chat-delete{
+    flex:0 0 auto;border:none;background:transparent;color:#888;
+    cursor:pointer;font-size:16px;line-height:1;padding:1px 3px;border-radius:4px;
+  }
+  .chat-delete:hover{background:#eee;color:#111;}
   .chat-msg .chat-name{font-weight:800;margin-right:5px;}
   .chat-input-row{display:flex;gap:6px;padding:8px;border-top:1px solid #eee;}
   .chat-input-row input{flex:1;min-width:0;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:16px;}
@@ -848,7 +857,8 @@ function subscribeChat(){
   const chatRef = ref(db, `rooms/${state.roomCode}/chat`);
   onValue(chatRef, snap => {
     const data = snap.val() || {};
-    const messages = Object.values(data)
+    const messages = Object.entries(data)
+      .map(([id, m]) => ({ id, ...m }))
       .filter(m => m && m.text)
       .sort((a,b) => (a.createdAt || 0) - (b.createdAt || 0));
 
@@ -858,9 +868,22 @@ function subscribeChat(){
       row.className = 'chat-msg';
 
       const body = document.createElement('span');
+      body.className = 'chat-body';
       body.textContent = m.text;
 
+      const del = document.createElement('button');
+      del.className = 'chat-delete';
+      del.type = 'button';
+      del.textContent = '×';
+      del.title = 'このメッセージを削除';
+      del.setAttribute('aria-label', 'このメッセージを削除');
+      del.addEventListener('click', async () => {
+        if (!state.roomCode || !m.id) return;
+        await remove(ref(db, `rooms/${state.roomCode}/chat/${m.id}`));
+      });
+
       row.appendChild(body);
+      row.appendChild(del);
       chatMessages.appendChild(row);
     });
     chatMessages.scrollTop = chatMessages.scrollHeight;
