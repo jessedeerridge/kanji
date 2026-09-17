@@ -313,7 +313,7 @@
     <button id="btnStartPopClose" class="btn ghost" style="padding:2px 6px;font-size:12px;">×</button>
   </div>
   <div class="start-pop-main">
-    「スタート」で全員に正体カードを1枚配布（狼1人・残りは市民）。<br>
+    「スタート」で全員に正体カードを1枚配布（狼1人・親1人・残りは市民）。<br>
     「リセット」で人数選択へ戻します（内容は後で）。
   </div>
   <div class="start-pop-actions">
@@ -403,8 +403,9 @@ const btnDecision = document.getElementById('btnDecision');
 
 /* ★ 追加：仮のカード一覧データ */
 const ROLE_HELP = [
-  { name: "市民", text: "狼が誰なのかを話し合って見つけよう。" },
-  { name: "狼", text: "正体を隠して、市民として会話しよう。狼は1人だけ。" }
+  { name: "市民", text: "チャットで話し合おう。" },
+  { name: "狼", text: "市民と同じようにチャットできる。正体を隠して話し合おう。" },
+  { name: "親", text: "「決定」が押されるまでチャットを見ることができない。" }
 ];
 
 function renderHelpList(){
@@ -534,7 +535,7 @@ function renderMyHand(){
 
     const icon = document.createElement('div');
     icon.className = 'role-icon';
-    icon.textContent = v === '狼' ? '🐺' : '👤';
+    icon.textContent = v === '狼' ? '🐺' : (v === '親' ? '👑' : '👤');
 
     const name = document.createElement('div');
     name.className = 'role-name';
@@ -844,12 +845,13 @@ function updateChatVisibility(){
     return;
   }
 
-  // 決定前：市民だけ見える。決定後：狼も含め全員見える。
-  const canSee = role !== '狼' || decided;
+  // 決定前：親だけチャットを見られない。狼と市民は最初から見える。
+  // 決定後：親を含め全員が見える。
+  const canSee = role !== '親' || decided;
   chatPanel.classList.toggle('hidden', !canSee);
 
-  // 決定ボタンは市民だけ・決定前だけ表示。
-  btnDecision.style.display = (role !== '狼' && !decided) ? '' : 'none';
+  // 決定前、チャットを見られる狼・市民に決定ボタンを表示。
+  btnDecision.style.display = (role !== '親' && !decided) ? '' : 'none';
 }
 
 function subscribeChat(){
@@ -892,7 +894,7 @@ function subscribeChat(){
 
 btnDecision.addEventListener('click', async () => {
   if (!state.roomCode) return;
-  if (myRole() === '狼') return;
+  if (myRole() === '親') return;
   await update(ref(db, `rooms/${state.roomCode}`), {
     chatDecided: true
   });
@@ -900,7 +902,7 @@ btnDecision.addEventListener('click', async () => {
 
 async function sendChat(){
   if (!state.roomCode || !state.userName) return;
-  if (myRole() === '狼' && !state.room.chatDecided) return;
+  if (myRole() === '親' && !state.room.chatDecided) return;
   const msg = chatInput.value.trim();
   if (!msg) return;
   chatInput.value = '';
@@ -930,11 +932,13 @@ async function dealInitialHands(){
   const players = Object.values(tables).filter(t => t && t.playerId);
   if (!players.length) return;
 
-  // 狼は必ず1人だけ。残りは全員市民。
-  const roles = Array(players.length).fill('市民');
-  roles[Math.floor(Math.random() * players.length)] = '狼';
+  // 狼1人・親1人・残りは全員市民。
+  // 2人以上で成立。
+  if (players.length < 2) return;
 
-  // 念のため役職配列をシャッフル
+  const roles = ['狼', '親', ...Array(Math.max(0, players.length - 2)).fill('市民')];
+
+  // 配役をシャッフル
   for (let i = roles.length - 1; i > 0; i--){
     const j = Math.floor(Math.random() * (i + 1));
     [roles[i], roles[j]] = [roles[j], roles[i]];
