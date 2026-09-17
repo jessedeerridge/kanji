@@ -286,7 +286,10 @@
 
 <!-- ★ 全員チャット -->
 <div id="chatPanel" class="chat-panel hidden">
-  <div class="chat-header">チャット</div>
+  <div class="chat-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+    <span>チャット</span>
+    <button id="btnDecision" class="btn primary" style="padding:4px 8px;">決定</button>
+  </div>
   <div id="chatMessages" class="chat-messages"></div>
   <div class="chat-input-row">
     <input id="chatInput" maxlength="100" placeholder="メッセージ" />
@@ -387,6 +390,7 @@ const chatPanel = document.getElementById('chatPanel');
 const chatMessages = document.getElementById('chatMessages');
 const chatInput = document.getElementById('chatInput');
 const btnChatSend = document.getElementById('btnChatSend');
+const btnDecision = document.getElementById('btnDecision');
 
 /* ★ 追加：仮のカード一覧データ */
 const ROLE_HELP = [
@@ -485,6 +489,7 @@ function subscribeRoom(){
   const roomRef = ref(db, `rooms/${state.roomCode}`);
   onValue(roomRef, snap => {
     state.room = snap.val() || {};
+    updateChatVisibility();
     const waiting = (!state.isHost && !state.room.maxPlayers);
     hostSelectingPop.classList.toggle('hidden', !waiting);
     syncSeatUI();
@@ -504,6 +509,7 @@ function subscribeHands(){
   onValue(handsRef, snap => {
     state.hands = snap.val() || {};
     renderHands();
+    updateChatVisibility();
   });
 }
 
@@ -568,7 +574,6 @@ btnJoin.addEventListener('click', async () => {
   joinBox.classList.add('hidden');
   lobby.classList.remove('hidden');
   lobby.classList.add('entered');
-  chatPanel.classList.remove('hidden');
 
   await restoreSeatFromDB();
 
@@ -815,6 +820,29 @@ btnKickYes.addEventListener('click', async (e) => {
 
 
 /* ★ ルーム内チャット */
+function myRole(){
+  const handData = state.hands[state.userId];
+  return handData && Array.isArray(handData.cards) ? handData.cards[0] : null;
+}
+
+function updateChatVisibility(){
+  const role = myRole();
+  const decided = !!state.room.chatDecided;
+
+  // 配役前はチャットを隠す。
+  if (!role){
+    chatPanel.classList.add('hidden');
+    return;
+  }
+
+  // 決定前：市民だけ見える。決定後：狼も含め全員見える。
+  const canSee = role !== '狼' || decided;
+  chatPanel.classList.toggle('hidden', !canSee);
+
+  // 決定ボタンは市民だけ・決定前だけ表示。
+  btnDecision.style.display = (role !== '狼' && !decided) ? '' : 'none';
+}
+
 function subscribeChat(){
   if (!state.roomCode) return;
   const chatRef = ref(db, `rooms/${state.roomCode}/chat`);
@@ -829,14 +857,9 @@ function subscribeChat(){
       const row = document.createElement('div');
       row.className = 'chat-msg';
 
-      const name = document.createElement('span');
-      name.className = 'chat-name';
-      name.textContent = `${m.name || '名無し'}：`;
-
       const body = document.createElement('span');
       body.textContent = m.text;
 
-      row.appendChild(name);
       row.appendChild(body);
       chatMessages.appendChild(row);
     });
@@ -844,8 +867,17 @@ function subscribeChat(){
   });
 }
 
+btnDecision.addEventListener('click', async () => {
+  if (!state.roomCode) return;
+  if (myRole() === '狼') return;
+  await update(ref(db, `rooms/${state.roomCode}`), {
+    chatDecided: true
+  });
+});
+
 async function sendChat(){
   if (!state.roomCode || !state.userName) return;
+  if (myRole() === '狼' && !state.room.chatDecided) return;
   const msg = chatInput.value.trim();
   if (!msg) return;
   chatInput.value = '';
@@ -903,6 +935,8 @@ btnStartPopClose.addEventListener('click', () => {
 
 btnGameStart.addEventListener('click', async () => {
   if (!state.isHost) return;
+  await remove(ref(db, `rooms/${state.roomCode}/chat`));
+  await remove(ref(db, `rooms/${state.roomCode}/chatDecided`));
   await dealInitialHands();
   startPop.classList.add('hidden');
 });
@@ -915,7 +949,8 @@ btnResetRoom.addEventListener('click', async () => {
     remove(ref(db, `${base}/maxPlayers`)),
     remove(ref(db, `${base}/tables`)),
     remove(ref(db, `${base}/hands`)),
-    remove(ref(db, `${base}/chat`))
+    remove(ref(db, `${base}/chat`)),
+    remove(ref(db, `${base}/chatDecided`))
   ]);
 
   state.seatedTable = null;
